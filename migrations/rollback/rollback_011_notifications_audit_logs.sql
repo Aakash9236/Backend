@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS public.audit_logs CASCADE;
+DROP TABLE IF EXISTS public.notifications CASCADE;
+COMMIT;

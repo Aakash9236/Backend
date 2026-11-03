@@ -1,0 +1,23 @@
+{
+  "name": "service-platform-backend",
+  "version": "1.0.0",
+  "description": "Multi-Service On-Demand Platform Modular Monolith Backend",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "db:audit": "tsx scripts/audit-db.ts"
+  },
+  "keywords": [
+    "on-demand-services",
+    "modular-monolith",
+    "typescript",
+    "express",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC"
+}
+

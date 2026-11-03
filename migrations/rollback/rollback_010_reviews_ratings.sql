@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS public.reviews_ratings CASCADE;
+COMMIT;

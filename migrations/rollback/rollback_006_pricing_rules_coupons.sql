@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS public.coupons CASCADE;
+DROP TABLE IF EXISTS public.pricing_rules CASCADE;
+COMMIT;

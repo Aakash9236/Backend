@@ -1,0 +1,836 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. BASELINE EXISTING TABLES (AUDITED)
+// ==========================================
+
+model User {
+  id               BigInt             @id @default(autoincrement())
+  mobileNumber     String             @unique @map("mobile_number") @db.VarChar
+  email            String?            @unique @db.VarChar
+  accountStatus    String             @default("ACTIVE") @map("account_status") @db.VarChar
+  isMobileVerified Boolean            @default(false) @map("is_mobile_verified")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  userRoles        UserRole[]
+  otpVerifications OtpVerification[]
+  userSessions     UserSession[]
+  customerProfile  CustomerProfile?
+  partnerProfile   PartnerProfile?
+  addresses        UserAddress[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]         @relation("AuditActor")
+  reviewsGiven     ReviewRating[]     @relation("ReviewerUser")
+  reviewsReceived  ReviewRating[]     @relation("RevieweeUser")
+  cancelledBookings Booking[]         @relation("CancelledByUser")
+  statusHistories  BookingStatusHistory[] @relation("ChangedByUser")
+  reviewedProfiles PartnerProfile[]   @relation("ReviewedByAdmin")
+  reviewedDocuments PartnerDocument[] @relation("ReviewedDocumentAdmin")
+  refundsProcessed Refund[]           @relation("RefundProcessedBy")
+
+  @@map("users")
+}
+
+model Role {
+  id          BigInt     @id @default(autoincrement())
+  roleName    String     @unique @map("role_name") @db.VarChar
+  description String?    @db.Text
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  userRoles   UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         BigInt   @id @default(autoincrement())
+  userId     BigInt   @map("user_id")
+  roleId     BigInt   @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, roleId], map: "uq_user_role")
+  @@map("user_roles")
+}
+
+model OtpVerification {
+  id           BigInt    @id @default(autoincrement())
+  mobileNumber String    @map("mobile_number") @db.VarChar
+  userId       BigInt?   @map("user_id")
+  otpHash      String    @map("otp_hash") @db.VarChar
+  purpose      String    @default("AUTHENTICATION") @db.VarChar
+  status       String    @default("PENDING") @db.VarChar
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(5) @map("max_attempts")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt], map: "idx_otp_expiry")
+  @@index([mobileNumber, createdAt(sort: Desc)], map: "idx_otp_mobile_created")
+  @@map("otp_verifications")
+}
+
+model UserSession {
+  id               BigInt    @id @default(autoincrement())
+  userId           BigInt    @map("user_id")
+  refreshTokenHash String    @unique @map("refresh_token_hash") @db.VarChar
+  deviceId         String?   @map("device_id") @db.VarChar
+  deviceName       String?   @map("device_name") @db.VarChar
+  ipAddress        String?   @map("ip_address") // Maps to inet
+  userAgent        String?   @map("user_agent") @db.Text
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_sessions_user")
+  @@map("user_sessions")
+}
+
+model CustomerProfile {
+  id              BigInt    @id @default(autoincrement())
+  userId          BigInt    @unique @map("user_id")
+  firstName       String    @map("first_name") @db.VarChar
+  lastName        String?   @map("last_name") @db.VarChar
+  dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  gender          String?   @db.VarChar
+  profileImageUrl String?   @map("profile_image_url") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+
+  @@map("customer_profiles")
+}
+
+model PartnerProfile {
+  id                  BigInt               @id @default(autoincrement())
+  userId              BigInt               @unique @map("user_id")
+  profileType         String               @default("INDIVIDUAL") @map("profile_type") @db.VarChar
+  legalName           String               @map("legal_name") @db.VarChar
+  businessName        String?              @map("business_name") @db.VarChar
+  businessDescription String?              @map("business_description") @db.Text
+  experienceYears     Int                  @default(0) @map("experience_years")
+  approvalStatus      String               @default("PENDING") @map("approval_status") @db.VarChar
+  rejectionReason     String?              @map("rejection_reason") @db.Text
+  reviewedBy          BigInt?              @map("reviewed_by")
+  reviewedAt          DateTime?            @map("reviewed_at") @db.Timestamptz
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer            User?                @relation("ReviewedByAdmin", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documents           PartnerDocument[]
+  skills              PartnerSkill[]
+  serviceAreas        PartnerServiceArea[]
+  partnerVehicles     PartnerVehicle[]
+  wallet              PartnerWallet?
+  availability        PartnerAvailability?
+  liveLocation        PartnerLiveLocation?
+  locationHistories   PartnerLocationHistory[]
+  assignments         BookingAssignment[]
+
+  @@index([approvalStatus], map: "idx_partner_approval")
+  @@map("partner_profiles")
+}
+
+model PartnerDocument {
+  id                 BigInt         @id @default(autoincrement())
+  partnerId          BigInt         @map("partner_id")
+  documentType       String         @map("document_type") @db.VarChar
+  documentStorageKey String         @map("document_storage_key") @db.Text
+  verificationStatus String         @default("PENDING") @map("verification_status") @db.VarChar
+  rejectionReason    String?        @map("rejection_reason") @db.Text
+  reviewedBy         BigInt?        @map("reviewed_by")
+  reviewedAt         DateTime?      @map("reviewed_at") @db.Timestamptz
+  uploadedAt         DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz
+
+  partner            PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  reviewer           User?          @relation("ReviewedDocumentAdmin", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([partnerId], map: "idx_partner_documents")
+  @@index([verificationStatus], map: "idx_partner_document_status")
+  @@map("partner_documents")
+}
+
+model ServiceCategory {
+  id               BigInt            @id @default(autoincrement())
+  parentCategoryId BigInt?           @map("parent_category_id")
+  categoryCode     String            @unique @map("category_code") @db.VarChar
+  categoryName     String            @map("category_name") @db.VarChar
+  description      String?           @db.Text
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  parent           ServiceCategory?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Restrict)
+  children         ServiceCategory[] @relation("CategoryHierarchy")
+  partnerSkills    PartnerSkill[]
+  services         Service[]
+  vehicleTypes     VehicleType[]
+  pricingRules     PricingRule[]
+  bookings         Booking[]
+
+  @@index([parentCategoryId], map: "idx_service_parent")
+  @@map("service_categories")
+}
+
+model PartnerSkill {
+  id                 BigInt          @id @default(autoincrement())
+  partnerId          BigInt          @map("partner_id")
+  serviceCategoryId  BigInt          @map("service_category_id")
+  experienceYears    Int             @default(0) @map("experience_years")
+  verificationStatus String          @default("PENDING") @map("verification_status") @db.VarChar
+  isActive           Boolean         @default(true) @map("is_active")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  partner            PartnerProfile  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  category           ServiceCategory @relation(fields: [serviceCategoryId], references: [id], onDelete: Restrict)
+
+  @@unique([partnerId, serviceCategoryId], map: "uq_partner_skill")
+  @@index([partnerId], map: "idx_partner_skills_partner")
+  @@index([serviceCategoryId], map: "idx_partner_skills_category")
+  @@map("partner_skills")
+}
+
+model City {
+  id           BigInt               @id @default(autoincrement())
+  countryCode  String               @default("IN") @map("country_code") @db.VarChar
+  stateName    String               @map("state_name") @db.VarChar
+  cityName     String               @map("city_name") @db.VarChar
+  citySlug     String               @unique @map("city_slug") @db.VarChar
+  isActive     Boolean              @default(true) @map("is_active")
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  areas        Area[]
+  serviceAreas PartnerServiceArea[]
+  addresses    UserAddress[]
+  rateCards    ServiceRateCard[]
+  pricingRules PricingRule[]
+  bookings     Booking[]
+
+  @@unique([countryCode, stateName, cityName], map: "uq_city_location")
+  @@map("cities")
+}
+
+model Area {
+  id           BigInt               @id @default(autoincrement())
+  cityId       BigInt               @map("city_id")
+  areaName     String               @map("area_name") @db.VarChar
+  postalCode   String?              @map("postal_code") @db.VarChar
+  latitude     Decimal?             @db.Decimal
+  longitude    Decimal?             @db.Decimal
+  isActive     Boolean              @default(true) @map("is_active")
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  city         City                 @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  serviceAreas PartnerServiceArea[]
+  addresses    UserAddress[]
+
+  @@unique([cityId, areaName], map: "uq_city_area")
+  @@unique([cityId, id], map: "uq_area_city_id")
+  @@index([cityId], map: "idx_areas_city")
+  @@map("areas")
+}
+
+model PartnerServiceArea {
+  id              BigInt         @id @default(autoincrement())
+  partnerId       BigInt         @map("partner_id")
+  cityId          BigInt         @map("city_id")
+  areaId          BigInt?        @map("area_id")
+  coverageType    String         @map("coverage_type") @db.VarChar
+  serviceRadiusKm Decimal?       @map("service_radius_km") @db.Decimal
+  isActive        Boolean        @default(true) @map("is_active")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  partner         PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  city            City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  area            Area?          @relation(fields: [areaId], references: [id], onDelete: Restrict)
+
+  @@index([partnerId], map: "idx_partner_service_partner")
+  @@index([cityId], map: "idx_partner_service_city")
+  @@map("partner_service_areas")
+}
+
+// ==========================================
+// 2. PROPOSED NEW PLATFORM MODULES
+// ==========================================
+
+model UserAddress {
+  id           BigInt    @id @default(autoincrement())
+  userId       BigInt    @map("user_id")
+  cityId       BigInt    @map("city_id")
+  areaId       BigInt?   @map("area_id")
+  addressType  String    @default("HOME") @map("address_type") @db.VarChar(20)
+  addressLine1 String    @map("address_line1") @db.Text
+  addressLine2 String?   @map("address_line2") @db.Text
+  landmark     String?   @db.VarChar(255)
+  postalCode   String    @map("postal_code") @db.VarChar(20)
+  latitude     Decimal   @db.Decimal(10, 7)
+  longitude    Decimal   @db.Decimal(10, 7)
+  isDefault    Boolean   @default(false) @map("is_default")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city         City      @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  area         Area?     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  pickupBookings Booking[] @relation("PickupAddress")
+  dropBookings   Booking[] @relation("DropAddress")
+
+  @@index([userId])
+  @@index([cityId])
+  @@map("user_addresses")
+}
+
+model VehicleType {
+  id                BigInt          @id @default(autoincrement())
+  typeCode          String          @unique @map("type_code") @db.VarChar(50)
+  typeName          String          @map("type_name") @db.VarChar(100)
+  serviceCategoryId BigInt          @map("service_category_id")
+  capacityKg        Decimal         @map("capacity_kg") @db.Decimal(10, 2)
+  volumeCuft        Decimal?        @map("volume_cuft") @db.Decimal(10, 2)
+  baseFare          Decimal         @default(0.00) @map("base_fare") @db.Decimal(10, 2)
+  perKmRate         Decimal         @default(0.00) @map("per_km_rate") @db.Decimal(10, 2)
+  perMinuteRate     Decimal         @default(0.00) @map("per_minute_rate") @db.Decimal(10, 2)
+  iconUrl           String?         @map("icon_url") @db.Text
+  isActive          Boolean         @default(true) @map("is_active")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  category          ServiceCategory @relation(fields: [serviceCategoryId], references: [id], onDelete: Restrict)
+  vehicles          Vehicle[]
+  pricingRules      PricingRule[]
+  bookings          Booking[]
+
+  @@map("vehicle_types")
+}
+
+model Vehicle {
+  id                    BigInt           @id @default(autoincrement())
+  vehicleTypeId         BigInt           @map("vehicle_type_id")
+  registrationNumber    String           @unique @map("registration_number") @db.VarChar(50)
+  make                  String?          @db.VarChar(100)
+  model                 String?          @db.VarChar(100)
+  manufacturingYear     Int?             @map("manufacturing_year")
+  rcNumber              String?          @map("rc_number") @db.VarChar(100)
+  fitnessValidUntil     DateTime?        @map("fitness_valid_until") @db.Date
+  insuranceValidUntil   DateTime?        @map("insurance_valid_until") @db.Date
+  pollutionValidUntil   DateTime?        @map("pollution_valid_until") @db.Date
+  verificationStatus    String           @default("PENDING") @map("verification_status") @db.VarChar(20)
+  rejectionReason       String?          @map("rejection_reason") @db.Text
+  isActive              Boolean          @default(true) @map("is_active")
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  vehicleType           VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  partnerVehicles       PartnerVehicle[]
+
+  @@index([vehicleTypeId])
+  @@index([verificationStatus])
+  @@map("vehicles")
+}
+
+model PartnerVehicle {
+  id         BigInt         @id @default(autoincrement())
+  partnerId  BigInt         @map("partner_id")
+  vehicleId  BigInt         @map("vehicle_id")
+  isPrimary  Boolean        @default(true) @map("is_primary")
+  assignedAt DateTime       @default(now()) @map("assigned_at") @db.Timestamptz
+
+  partner    PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, vehicleId], map: "uq_partner_vehicle")
+  @@index([partnerId])
+  @@map("partner_vehicles")
+}
+
+model InventoryCategory {
+  id           BigInt          @id @default(autoincrement())
+  categoryName String          @unique @map("category_name") @db.VarChar(100)
+  displayOrder Int             @default(0) @map("display_order")
+  isActive     Boolean         @default(true) @map("is_active")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  items        InventoryItem[]
+
+  @@map("inventory_categories")
+}
+
+model InventoryItem {
+  id                  BigInt                 @id @default(autoincrement())
+  inventoryCategoryId BigInt                 @map("inventory_category_id")
+  itemName            String                 @map("item_name") @db.VarChar(150)
+  estimatedVolumeCuft Decimal                @default(10.00) @map("estimated_volume_cuft") @db.Decimal(8, 2)
+  estimatedWeightKg   Decimal?               @map("estimated_weight_kg") @db.Decimal(8, 2)
+  requiresDismantling Boolean                @default(false) @map("requires_dismantling")
+  fragile             Boolean                @default(false)
+  basePackingCharge   Decimal                @default(0.00) @map("base_packing_charge") @db.Decimal(10, 2)
+  isActive            Boolean                @default(true) @map("is_active")
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz
+
+  category            InventoryCategory      @relation(fields: [inventoryCategoryId], references: [id], onDelete: Restrict)
+  bookingItems        BookingInventoryItem[]
+
+  @@index([inventoryCategoryId])
+  @@map("inventory_items")
+}
+
+model Service {
+  id                BigInt            @id @default(autoincrement())
+  serviceCategoryId BigInt            @map("service_category_id")
+  serviceCode       String            @unique @map("service_code") @db.VarChar(50)
+  serviceName       String            @map("service_name") @db.VarChar(150)
+  description       String?           @db.Text
+  durationMinutes   Int               @default(60) @map("duration_minutes")
+  iconUrl           String?           @map("icon_url") @db.Text
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  category          ServiceCategory   @relation(fields: [serviceCategoryId], references: [id], onDelete: Restrict)
+  rateCards         ServiceRateCard[]
+  bookingItems      BookingItem[]
+
+  @@index([serviceCategoryId])
+  @@map("services")
+}
+
+model ServiceRateCard {
+  id                BigInt   @id @default(autoincrement())
+  serviceId         BigInt   @map("service_id")
+  cityId            BigInt   @map("city_id")
+  visitingCharge    Decimal  @default(0.00) @map("visiting_charge") @db.Decimal(10, 2)
+  baseServiceCharge Decimal  @default(0.00) @map("base_service_charge") @db.Decimal(10, 2)
+  hourlyCharge      Decimal? @map("hourly_charge") @db.Decimal(10, 2)
+  minimumCharge     Decimal  @default(0.00) @map("minimum_charge") @db.Decimal(10, 2)
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  service           Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  city              City     @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  @@unique([serviceId, cityId], map: "uq_service_city_rate")
+  @@index([cityId])
+  @@map("service_rate_cards")
+}
+
+model PricingRule {
+  id                         BigInt          @id @default(autoincrement())
+  cityId                     BigInt          @map("city_id")
+  serviceCategoryId          BigInt          @map("service_category_id")
+  vehicleTypeId              BigInt?         @map("vehicle_type_id")
+  baseFare                   Decimal         @default(0.00) @map("base_fare") @db.Decimal(10, 2)
+  baseDistanceKm             Decimal         @default(0.00) @map("base_distance_km") @db.Decimal(8, 2)
+  perKmRate                  Decimal         @default(0.00) @map("per_km_rate") @db.Decimal(10, 2)
+  perMinuteWaitingRate       Decimal         @default(0.00) @map("per_minute_waiting_rate") @db.Decimal(10, 2)
+  helperChargePerPerson      Decimal         @default(0.00) @map("helper_charge_per_person") @db.Decimal(10, 2)
+  floorChargeWithoutElevator Decimal         @default(0.00) @map("floor_charge_without_elevator") @db.Decimal(10, 2)
+  volumeRatePerCuft          Decimal         @default(0.00) @map("volume_rate_per_cuft") @db.Decimal(10, 2)
+  surgeMultiplier            Decimal         @default(1.00) @map("surge_multiplier") @db.Decimal(4, 2)
+  isActive                   Boolean         @default(true) @map("is_active")
+  createdAt                  DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  city                       City            @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  category                   ServiceCategory @relation(fields: [serviceCategoryId], references: [id], onDelete: Restrict)
+  vehicleType                VehicleType?    @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+
+  @@index([cityId, serviceCategoryId])
+  @@map("pricing_rules")
+}
+
+model Coupon {
+  id                 BigInt    @id @default(autoincrement())
+  couponCode         String    @unique @map("coupon_code") @db.VarChar(50)
+  description        String?   @db.Text
+  discountType       String    @map("discount_type") @db.VarChar(20)
+  discountValue      Decimal   @map("discount_value") @db.Decimal(10, 2)
+  maxDiscountAmount  Decimal?  @map("max_discount_amount") @db.Decimal(10, 2)
+  minBookingAmount   Decimal   @default(0.00) @map("min_booking_amount") @db.Decimal(10, 2)
+  usageLimitTotal    Int?      @map("usage_limit_total")
+  usageLimitPerUser  Int       @default(1) @map("usage_limit_per_user")
+  currentUsageCount  Int       @default(0) @map("current_usage_count")
+  validFrom          DateTime  @map("valid_from") @db.Timestamptz
+  validUntil         DateTime  @map("valid_until") @db.Timestamptz
+  isActive           Boolean   @default(true) @map("is_active")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  bookings           Booking[]
+
+  @@map("coupons")
+}
+
+model Booking {
+    id                       BigInt                 @id @default(autoincrement())
+    bookingNumber            String                 @unique @map("booking_number") @db.VarChar(30)
+    customerId               BigInt                 @map("customer_id")
+    serviceCategoryId        BigInt                 @map("service_category_id")
+    cityId                   BigInt                 @map("city_id")
+    bookingType              String                 @map("booking_type") @db.VarChar(30)
+    bookingStatus            String                 @default("REQUESTED") @map("booking_status") @db.VarChar(30)
+    scheduledAt              DateTime               @map("scheduled_at") @db.Timestamptz
+    pickupAddressId          BigInt                 @map("pickup_address_id")
+    dropAddressId            BigInt?                @map("drop_address_id")
+    vehicleTypeId            BigInt?                @map("vehicle_type_id")
+    couponId                 BigInt?                @map("coupon_id")
+    specialInstructions      String?                @map("special_instructions") @db.Text
+    estimatedDurationMinutes Int?                   @map("estimated_duration_minutes")
+    cancellationReason       String?                @map("cancellation_reason") @db.Text
+    cancelledBy              BigInt?                @map("cancelled_by")
+    cancelledAt              DateTime?              @map("cancelled_at") @db.Timestamptz
+    completedAt              DateTime?              @map("completed_at") @db.Timestamptz
+    createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+    customer                 CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+    category                 ServiceCategory        @relation(fields: [serviceCategoryId], references: [id], onDelete: Restrict)
+    city                     City                   @relation(fields: [cityId], references: [id], onDelete: Restrict)
+    pickupAddress            UserAddress            @relation("PickupAddress", fields: [pickupAddressId], references: [id], onDelete: Restrict)
+    dropAddress              UserAddress?           @relation("DropAddress", fields: [dropAddressId], references: [id], onDelete: Restrict)
+    vehicleType              VehicleType?           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+    coupon                   Coupon?                @relation(fields: [couponId], references: [id], onDelete: SetNull)
+    canceller                User?                  @relation("CancelledByUser", fields: [cancelledBy], references: [id], onDelete: SetNull)
+
+    bookingItems             BookingItem[]
+    inventoryItems           BookingInventoryItem[]
+    laborDetails             BookingLaborDetail?
+    fareBreakdown            FareBreakdown?
+    assignments              BookingAssignment[]
+    statusHistory            BookingStatusHistory[]
+    payments                 Payment[]
+    refunds                  Refund[]
+    reviews                  ReviewRating[]
+    notifications            Notification[]
+    activeAvailability       PartnerAvailability[]
+    locationHistory          PartnerLocationHistory[]
+    walletTransactions       WalletTransaction[]
+
+    @@index([customerId])
+    @@index([bookingStatus])
+    @@index([scheduledAt])
+    @@map("bookings")
+}
+
+model BookingItem {
+  id         BigInt   @id @default(autoincrement())
+  bookingId  BigInt   @map("booking_id")
+  serviceId  BigInt   @map("service_id")
+  quantity   Int      @default(1)
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(10, 2)
+  totalPrice Decimal  @map("total_price") @db.Decimal(10, 2)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId])
+  @@map("booking_items")
+}
+
+model BookingInventoryItem {
+  id                BigInt        @id @default(autoincrement())
+  bookingId         BigInt        @map("booking_id")
+  inventoryItemId   BigInt        @map("inventory_item_id")
+  quantity          Int           @default(1)
+  needsPacking      Boolean       @default(true) @map("needs_packing")
+  needsDismantling  Boolean       @default(false) @map("needs_dismantling")
+  itemVolumeCuft    Decimal       @default(0.00) @map("item_volume_cuft") @db.Decimal(8, 2)
+  packingCharge     Decimal       @default(0.00) @map("packing_charge") @db.Decimal(10, 2)
+
+  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  item              InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@map("booking_inventory_items")
+}
+
+model BookingLaborDetail {
+  id                    BigInt   @id @default(autoincrement())
+  bookingId             BigInt   @unique @map("booking_id")
+  pickupFloor           Int      @default(0) @map("pickup_floor")
+  pickupHasElevator     Boolean  @default(false) @map("pickup_has_elevator")
+  dropFloor             Int      @default(0) @map("drop_floor")
+  dropHasElevator       Boolean  @default(false) @map("drop_has_elevator")
+  helpersCountRequested Int      @default(0) @map("helpers_count_requested")
+  laborCharge           Decimal  @default(0.00) @map("labor_charge") @db.Decimal(10, 2)
+  floorCharge           Decimal  @default(0.00) @map("floor_charge") @db.Decimal(10, 2)
+  packingCharge         Decimal  @default(0.00) @map("packing_charge") @db.Decimal(10, 2)
+
+  booking               Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("booking_labor_details")
+}
+
+model FareBreakdown {
+  id                  BigInt   @id @default(autoincrement())
+  bookingId           BigInt   @unique @map("booking_id")
+  baseFare            Decimal  @default(0.00) @map("base_fare") @db.Decimal(10, 2)
+  distanceFare        Decimal  @default(0.00) @map("distance_fare") @db.Decimal(10, 2)
+  itemsFare           Decimal  @default(0.00) @map("items_fare") @db.Decimal(10, 2)
+  inventoryVolumeFare Decimal  @default(0.00) @map("inventory_volume_fare") @db.Decimal(10, 2)
+  laborCharge         Decimal  @default(0.00) @map("labor_charge") @db.Decimal(10, 2)
+  floorCharge         Decimal  @default(0.00) @map("floor_charge") @db.Decimal(10, 2)
+  packingCharge       Decimal  @default(0.00) @map("packing_charge") @db.Decimal(10, 2)
+  waitingCharge       Decimal  @default(0.00) @map("waiting_charge") @db.Decimal(10, 2)
+  surgeCharge         Decimal  @default(0.00) @map("surge_charge") @db.Decimal(10, 2)
+  discountAmount      Decimal  @default(0.00) @map("discount_amount") @db.Decimal(10, 2)
+  taxesAndFees        Decimal  @default(0.00) @map("taxes_and_fees") @db.Decimal(10, 2)
+  totalFare           Decimal  @map("total_fare") @db.Decimal(10, 2)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("fare_breakdowns")
+}
+
+model BookingAssignment {
+  id               BigInt         @id @default(autoincrement())
+  bookingId        BigInt         @map("booking_id")
+  partnerId        BigInt         @map("partner_id")
+  roleAssigned     String         @default("PRIMARY_PARTNER") @map("role_assigned") @db.VarChar(30)
+  assignmentStatus String         @default("OFFERED") @map("assignment_status") @db.VarChar(30)
+  assignedAt       DateTime       @default(now()) @map("assigned_at") @db.Timestamptz
+  respondedAt      DateTime?      @map("responded_at") @db.Timestamptz
+  rejectionReason  String?        @map("rejection_reason") @db.Text
+
+  booking          Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  partner          PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, partnerId], map: "uq_booking_partner_assignment")
+  @@index([partnerId, assignmentStatus])
+  @@map("booking_assignments")
+}
+
+model BookingStatusHistory {
+  id         BigInt   @id @default(autoincrement())
+  bookingId  BigInt   @map("booking_id")
+  fromStatus String?  @map("from_status") @db.VarChar(30)
+  toStatus   String   @map("to_status") @db.VarChar(30)
+  changedBy  BigInt?  @map("changed_by")
+  comment    String?  @db.Text
+  changedAt  DateTime @default(now()) @map("changed_at") @db.Timestamptz
+
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user       User?    @relation("ChangedByUser", fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@map("booking_status_history")
+}
+
+model Payment {
+  id               BigInt    @id @default(autoincrement())
+  bookingId        BigInt    @map("booking_id")
+  paymentMethod    String    @map("payment_method") @db.VarChar(30)
+  paymentStatus    String    @default("PENDING") @map("payment_status") @db.VarChar(30)
+  amount           Decimal   @db.Decimal(10, 2)
+  currency         String    @default("INR") @db.VarChar(10)
+  gatewayName      String?   @map("gateway_name") @db.VarChar(50)
+  gatewayOrderId   String?   @map("gateway_order_id") @db.VarChar(100)
+  gatewayPaymentId String?   @unique @map("gateway_payment_id") @db.VarChar(100)
+  gatewaySignature String?   @map("gateway_signature") @db.VarChar(255)
+  idempotencyKey   String?   @unique @map("idempotency_key") @db.VarChar(100)
+  errorMessage     String?   @map("error_message") @db.Text
+  paidAt           DateTime? @map("paid_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  booking          Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  refunds          Refund[]
+
+  @@index([bookingId])
+  @@index([paymentStatus])
+  @@map("payments")
+}
+
+model Refund {
+  id              BigInt    @id @default(autoincrement())
+  paymentId       BigInt    @map("payment_id")
+  bookingId       BigInt    @map("booking_id")
+  refundAmount    Decimal   @map("refund_amount") @db.Decimal(10, 2)
+  currency        String    @default("INR") @db.VarChar(10)
+  gatewayRefundId String?   @unique @map("gateway_refund_id") @db.VarChar(100)
+  refundReason    String    @map("refund_reason") @db.Text
+  refundStatus    String    @default("PENDING") @map("refund_status") @db.VarChar(30)
+  processedBy     BigInt?   @map("processed_by")
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  payment         Payment   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  processor       User?     @relation("RefundProcessedBy", fields: [processedBy], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model PartnerWallet {
+  id               BigInt              @id @default(autoincrement())
+  partnerId        BigInt              @unique @map("partner_id")
+  availableBalance Decimal             @default(0.00) @map("available_balance") @db.Decimal(12, 2)
+  lockedBalance    Decimal             @default(0.00) @map("locked_balance") @db.Decimal(12, 2)
+  totalEarned      Decimal             @default(0.00) @map("total_earned") @db.Decimal(12, 2)
+  totalWithdrawn   Decimal             @default(0.00) @map("total_withdrawn") @db.Decimal(12, 2)
+  currency         String              @default("INR") @db.VarChar(10)
+  isActive         Boolean             @default(true) @map("is_active")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  partner          PartnerProfile      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  transactions     WalletTransaction[]
+
+  @@map("partner_wallets")
+}
+
+model WalletTransaction {
+  id              BigInt        @id @default(autoincrement())
+  walletId        BigInt        @map("wallet_id")
+  bookingId       BigInt?       @map("booking_id")
+  transactionType String        @map("transaction_type") @db.VarChar(30)
+  amount          Decimal       @db.Decimal(10, 2)
+  openingBalance  Decimal       @map("opening_balance") @db.Decimal(12, 2)
+  closingBalance  Decimal       @map("closing_balance") @db.Decimal(12, 2)
+  referenceId     String?       @map("reference_id") @db.VarChar(100)
+  description     String?       @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  wallet          PartnerWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  booking         Booking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt(sort: Desc)])
+  @@map("wallet_transactions")
+}
+
+model PartnerAvailability {
+  id               BigInt         @id @default(autoincrement())
+  partnerId        BigInt         @unique @map("partner_id")
+  isOnline         Boolean        @default(false) @map("is_online")
+  isBusy           Boolean        @default(false) @map("is_busy")
+  currentBookingId BigInt?        @map("current_booking_id")
+  lastHeartbeatAt  DateTime       @default(now()) @map("last_heartbeat_at") @db.Timestamptz
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  partner          PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  currentBooking   Booking?       @relation(fields: [currentBookingId], references: [id], onDelete: SetNull)
+
+  @@index([isOnline, isBusy])
+  @@map("partner_availability")
+}
+
+model PartnerLiveLocation {
+  id                BigInt         @id @default(autoincrement())
+  partnerId         BigInt         @unique @map("partner_id")
+  latitude          Decimal        @db.Decimal(10, 7)
+  longitude         Decimal        @db.Decimal(10, 7)
+  heading           Decimal?       @db.Decimal(5, 2)
+  speedKph          Decimal?       @map("speed_kph") @db.Decimal(5, 2)
+  accuracyMeters    Decimal?       @map("accuracy_meters") @db.Decimal(6, 2)
+  batteryPercentage Int?           @map("battery_percentage")
+  recordedAt        DateTime       @default(now()) @map("recorded_at") @db.Timestamptz
+  updatedAt         DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  partner           PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([latitude, longitude])
+  @@map("partner_live_locations")
+}
+
+model PartnerLocationHistory {
+  id         BigInt         @id @default(autoincrement())
+  partnerId  BigInt         @map("partner_id")
+  bookingId  BigInt?        @map("booking_id")
+  latitude   Decimal        @db.Decimal(10, 7)
+  longitude  Decimal        @db.Decimal(10, 7)
+  heading    Decimal?       @db.Decimal(5, 2)
+  speedKph   Decimal?       @map("speed_kph") @db.Decimal(5, 2)
+  recordedAt DateTime       @default(now()) @map("recorded_at") @db.Timestamptz
+
+  partner    PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  booking    Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, recordedAt])
+  @@map("partner_location_history")
+}
+
+model ReviewRating {
+  id             BigInt   @id @default(autoincrement())
+  bookingId      BigInt   @map("booking_id")
+  reviewerUserId BigInt   @map("reviewer_user_id")
+  revieweeUserId BigInt   @map("reviewee_user_id")
+  rating         Int
+  reviewTitle    String?  @map("review_title") @db.VarChar(150)
+  comment        String?  @db.Text
+  tags           String[]
+  isPublic       Boolean  @default(true) @map("is_public")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  booking        Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reviewer       User     @relation("ReviewerUser", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+  reviewee       User     @relation("RevieweeUser", fields: [revieweeUserId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, reviewerUserId], map: "uq_booking_reviewer")
+  @@index([revieweeUserId, rating])
+  @@index([bookingId])
+  @@map("reviews_ratings")
+}
+
+model Notification {
+  id               BigInt    @id @default(autoincrement())
+  userId           BigInt    @map("user_id")
+  bookingId        BigInt?   @map("booking_id")
+  title            String    @db.VarChar(200)
+  message          String    @db.Text
+  notificationType String    @map("notification_type") @db.VarChar(50)
+  channel          String    @default("IN_APP") @db.VarChar(20)
+  payload          Json?
+  isRead           Boolean   @default(false) @map("is_read")
+  readAt           DateTime? @map("read_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking          Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  actorUserId BigInt?  @map("actor_user_id")
+  action      String   @db.VarChar(100)
+  entityName  String   @map("entity_name") @db.VarChar(100)
+  entityId    BigInt   @map("entity_id")
+  oldValues   Json?    @map("old_values")
+  newValues   Json?    @map("new_values")
+  ipAddress   String?  @map("ip_address") // inet in PostgreSQL
+  userAgent   String?  @map("user_agent") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityName, entityId])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
+

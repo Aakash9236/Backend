@@ -1,0 +1,5 @@
+-- ROLLBACK 002
+BEGIN;
+DROP TABLE IF EXISTS public.user_addresses CASCADE;
+COMMIT;
+

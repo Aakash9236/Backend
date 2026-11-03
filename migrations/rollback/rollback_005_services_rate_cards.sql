@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS public.service_rate_cards CASCADE;
+DROP TABLE IF EXISTS public.services CASCADE;
+COMMIT;
