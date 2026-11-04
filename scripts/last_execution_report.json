@@ -1,0 +1,109 @@
+[
+  {
+    "migration": "002_user_addresses.sql",
+    "status": "SUCCESS",
+    "durationMs": 142,
+    "tablesCreated": [
+      "user_addresses"
+    ],
+    "totalTablesInDb": 15
+  },
+  {
+    "migration": "003_vehicle_fleet.sql",
+    "status": "SUCCESS",
+    "durationMs": 141,
+    "tablesCreated": [
+      "vehicle_types",
+      "vehicles",
+      "partner_vehicles"
+    ],
+    "totalTablesInDb": 18
+  },
+  {
+    "migration": "004_shifting_inventory_labor.sql",
+    "status": "SUCCESS",
+    "durationMs": 132,
+    "tablesCreated": [
+      "inventory_categories",
+      "inventory_items"
+    ],
+    "totalTablesInDb": 20
+  },
+  {
+    "migration": "005_services_rate_cards.sql",
+    "status": "SUCCESS",
+    "durationMs": 139,
+    "tablesCreated": [
+      "services",
+      "service_rate_cards"
+    ],
+    "totalTablesInDb": 22
+  },
+  {
+    "migration": "006_pricing_rules_coupons.sql",
+    "status": "SUCCESS",
+    "durationMs": 123,
+    "tablesCreated": [
+      "pricing_rules",
+      "coupons"
+    ],
+    "totalTablesInDb": 24
+  },
+  {
+    "migration": "007_bookings_assignments.sql",
+    "status": "SUCCESS",
+    "durationMs": 175,
+    "tablesCreated": [
+      "bookings",
+      "booking_items",
+      "booking_inventory_items",
+      "booking_labor_details",
+      "fare_breakdowns",
+      "booking_assignments",
+      "booking_status_history"
+    ],
+    "totalTablesInDb": 31
+  },
+  {
+    "migration": "008_payments_wallets.sql",
+    "status": "SUCCESS",
+    "durationMs": 152,
+    "tablesCreated": [
+      "payments",
+      "refunds",
+      "partner_wallets",
+      "wallet_transactions"
+    ],
+    "totalTablesInDb": 35
+  },
+  {
+    "migration": "009_tracking_availability.sql",
+    "status": "SUCCESS",
+    "durationMs": 138,
+    "tablesCreated": [
+      "partner_availability",
+      "partner_live_locations",
+      "partner_location_history"
+    ],
+    "totalTablesInDb": 38
+  },
+  {
+    "migration": "010_reviews_ratings.sql",
+    "status": "SUCCESS",
+    "durationMs": 250,
+    "tablesCreated": [
+      "reviews_ratings"
+    ],
+    "totalTablesInDb": 39
+  },
+  {
+    "migration": "011_notifications_audit_logs.sql",
+    "status": "SUCCESS",
+    "durationMs": 131,
+    "tablesCreated": [
+      "notifications",
+      "audit_logs"
+    ],
+    "totalTablesInDb": 41
+  }
+]
