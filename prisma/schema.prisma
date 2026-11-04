@@ -834,3 +834,13 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+
+model SchemaMigration {
+  id              BigInt   @id @default(autoincrement())
+  migrationName   String   @unique @map("migration_name") @db.VarChar(100)
+  executedAt      DateTime @default(now()) @map("executed_at") @db.Timestamptz
+  executionTimeMs Int      @default(0) @map("execution_time_ms")
+  status          String   @default("SUCCESS") @db.VarChar(20)
+
+  @@map("schema_migrations")
+}
