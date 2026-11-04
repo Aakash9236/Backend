@@ -62,6 +62,7 @@ const swaggerDefinition = {
     { name: 'Customers', description: 'Customer profiles and personal details' },
     { name: 'Partners', description: 'Partner onboarding, skills, service areas & KYC documents' },
     { name: 'Admin', description: 'Admin partner approval, document verification & audit trails' },
+    { name: 'Vehicles', description: 'Fleet management, vehicle registration & KYC documents' },
     { name: 'Locations', description: 'Operational cities and serviceable areas' },
   ],
 };

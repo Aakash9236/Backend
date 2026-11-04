@@ -34,6 +34,7 @@ model User {
   statusHistories  BookingStatusHistory[] @relation("ChangedByUser")
   reviewedProfiles PartnerProfile[]   @relation("ReviewedByAdmin")
   reviewedDocuments PartnerDocument[] @relation("ReviewedDocumentAdmin")
+  reviewedVehicleDocuments VehicleDocument[] @relation("VehicleDocReviewer")
   refundsProcessed Refund[]           @relation("RefundProcessedBy")
 
   @@map("users")
@@ -344,6 +345,7 @@ model Vehicle {
 
   vehicleType           VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
   partnerVehicles       PartnerVehicle[]
+  documents             VehicleDocument[]
 
   @@index([vehicleTypeId])
   @@index([verificationStatus])
@@ -351,18 +353,42 @@ model Vehicle {
 }
 
 model PartnerVehicle {
-  id         BigInt         @id @default(autoincrement())
-  partnerId  BigInt         @map("partner_id")
-  vehicleId  BigInt         @map("vehicle_id")
-  isPrimary  Boolean        @default(true) @map("is_primary")
-  assignedAt DateTime       @default(now()) @map("assigned_at") @db.Timestamptz
+  id              BigInt         @id @default(autoincrement())
+  partnerId       BigInt         @map("partner_id")
+  vehicleId       BigInt         @map("vehicle_id")
+  isPrimary       Boolean        @default(true) @map("is_primary")
+  ownershipType   String         @default("OWNER") @map("ownership_type") @db.VarChar(30)
+  ownerName       String?        @map("owner_name") @db.VarChar(150)
+  ownershipStatus String         @default("ACTIVE") @map("ownership_status") @db.VarChar(20)
+  assignedAt      DateTime       @default(now()) @map("assigned_at") @db.Timestamptz
+  unassignedAt    DateTime?      @map("unassigned_at") @db.Timestamptz
 
-  partner    PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  vehicle    Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  partner         PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  vehicle         Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  @@unique([partnerId, vehicleId], map: "uq_partner_vehicle")
-  @@index([partnerId])
+  @@index([partnerId, ownershipStatus])
+  @@index([vehicleId])
   @@map("partner_vehicles")
+}
+
+model VehicleDocument {
+  id                 BigInt    @id @default(autoincrement())
+  vehicleId          BigInt    @map("vehicle_id")
+  documentType       String    @map("document_type") @db.VarChar(50)
+  documentStorageKey String    @map("document_storage_key") @db.Text
+  expiryDate         DateTime? @map("expiry_date") @db.Date
+  verificationStatus String    @default("PENDING") @map("verification_status") @db.VarChar(20)
+  rejectionReason    String?   @map("rejection_reason") @db.Text
+  reviewedBy         BigInt?   @map("reviewed_by")
+  reviewedAt         DateTime? @map("reviewed_at") @db.Timestamptz
+  uploadedAt         DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz
+
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reviewer           User?     @relation("VehicleDocReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([vehicleId, documentType, uploadedAt(sort: Desc)])
+  @@index([verificationStatus])
+  @@map("vehicle_documents")
 }
 
 model InventoryCategory {

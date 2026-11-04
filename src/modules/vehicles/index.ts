@@ -1,2 +1,10 @@
-// Module: vehicles (Scheduled for subsequent implementation phases)
-export {};
+export * from './vehicles.types';
+export * from './vehicles.validator';
+export * from './vehicles.repository';
+export * from './vehicles.service';
+export * from './vehicles.controller';
+export * from './vehicles.routes';
+export * from './vehicles-admin.controller';
+export * from './vehicles-admin.routes';
+export * from './services/vehicle-kyc.service';
+export * from './services/admin-vehicle.service';
