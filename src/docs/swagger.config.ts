@@ -64,6 +64,9 @@ const swaggerDefinition = {
     { name: 'Admin', description: 'Admin partner approval, document verification & audit trails' },
     { name: 'Vehicles', description: 'Fleet management, vehicle registration & KYC documents' },
     { name: 'Locations', description: 'Operational cities and serviceable areas' },
+    { name: 'Drivers', description: 'Driver profile onboarding, KYC document uploads, invitations & shifts' },
+    { name: 'Fleet Drivers', description: 'Fleet partner driver invitations, affiliations, and shift assignments' },
+    { name: 'Admin Drivers', description: 'Administrative driver verification, dossier inspection, and governance' },
   ],
 };
 

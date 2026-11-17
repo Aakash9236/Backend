@@ -116,7 +116,21 @@ export class UsersService {
           status = 'UNREGISTERED';
           isOperational = false;
         }
-      } else if (ur.role.roleName === 'DRIVER' || ur.role.roleName === 'WORKER') {
+      } else if (ur.role.roleName === 'DRIVER') {
+        const dp = (user as any).driverProfile;
+        if (dp) {
+          if (dp.suspendedAt) {
+            status = 'SUSPENDED';
+            isOperational = false;
+          } else {
+            status = dp.approvalStatus;
+            isOperational = dp.approvalStatus === 'APPROVED' && user.accountStatus === 'ACTIVE';
+          }
+        } else {
+          status = 'NOT_ONBOARDED';
+          isOperational = false;
+        }
+      } else if (ur.role.roleName === 'WORKER') {
         status = 'NOT_ONBOARDED';
         isOperational = false;
       } else if (ur.role.roleName === 'ADMIN' || ur.role.roleName === 'SUPER_ADMIN') {

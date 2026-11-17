@@ -15,6 +15,7 @@ export class UsersRepository {
         },
         customerProfile: true,
         partnerProfile: true,
+        driverProfile: true,
       },
     });
   }
