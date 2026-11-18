@@ -414,7 +414,36 @@ export class AuthService {
         approvalStatus = 'UNREGISTERED';
         isOperational = false;
       }
-    } else if (roleName === UserRole.DRIVER || roleName === UserRole.WORKER) {
+    } else if (roleName === UserRole.DRIVER) {
+      const driverProfile = await prisma.driverProfile.findUnique({
+        where: { userId },
+        include: { documents: true },
+      });
+      if (driverProfile) {
+        if (driverProfile.suspendedAt) {
+          approvalStatus = 'SUSPENDED';
+          isOperational = false;
+        } else {
+          approvalStatus = driverProfile.approvalStatus;
+          if (driverProfile.approvalStatus === 'APPROVED' && userAccountStatus === 'ACTIVE') {
+            const hasExpired = driverProfile.documents.some(
+              (d) => d.verificationStatus === 'VERIFIED' && d.expiryDate && d.expiryDate < new Date()
+            );
+            if (hasExpired) {
+              approvalStatus = 'DOCUMENT_EXPIRED';
+              isOperational = false;
+            } else {
+              isOperational = true;
+            }
+          } else {
+            isOperational = false;
+          }
+        }
+      } else {
+        approvalStatus = 'NOT_ONBOARDED';
+        isOperational = false;
+      }
+    } else if (roleName === UserRole.WORKER) {
       approvalStatus = 'NOT_ONBOARDED';
       isOperational = false;
     } else if (roleName === UserRole.ADMIN || roleName === UserRole.SUPER_ADMIN) {

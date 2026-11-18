@@ -7,6 +7,11 @@ import { partnerRoutes } from '../modules/partners/partners.routes';
 import { adminRoutes } from '../modules/admin/admin.routes';
 import { locationRoutes } from '../modules/locations/locations.routes';
 import { vehicleRoutes, adminVehicleRoutes } from '../modules/vehicles';
+import {
+  driverRoutes,
+  driverPartnerRoutes,
+  driverAdminRoutes,
+} from '../modules/drivers';
 
 const router = Router();
 
@@ -16,10 +21,13 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/customers', customerRoutes);
 router.use('/partners/vehicles', vehicleRoutes);
+router.use('/partners/drivers', driverPartnerRoutes);
 router.use('/partners', partnerRoutes);
 router.use('/admin/vehicles', adminVehicleRoutes);
+router.use('/admin/drivers', driverAdminRoutes);
 router.use('/admin', adminRoutes);
 router.use('/locations', locationRoutes);
 router.use('/vehicles', vehicleRoutes);
+router.use('/drivers', driverRoutes);
 
 export const apiV1Routes = router;

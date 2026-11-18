@@ -5,6 +5,7 @@ import app from '../src/app';
 import { prisma, disconnectDatabase } from '../src/config/db.config';
 import { TokenUtil } from '../src/common/utils/token.util';
 import { UserRole } from '../src/common/constants';
+import { DateUtil } from '../src/common/utils/date.util';
 import { defaultVehicleKycPolicyProvider } from '../src/modules/vehicles/services/vehicle-kyc.service';
 
 describe('Phase 6C: Vehicle Ownership & Fleet Management Verification', () => {
@@ -862,6 +863,224 @@ describe('Phase 6C: Vehicle Ownership & Fleet Management Verification', () => {
         .set('Authorization', `Bearer ${partnerAToken}`);
       const foundInA = partnerAList.body.data.find((item: any) => item.id === transferVehicleId);
       expect(foundInA).toBeUndefined();
+    });
+  });
+
+  describe('7. PostgreSQL Engine Constraints Verification (Live DB Integration)', () => {
+    let testPartnerId: bigint;
+    let testUserId: bigint;
+    let vId1: bigint;
+    let vId2: bigint;
+
+    beforeAll(async () => {
+      // Create isolated test user & partner for constraint testing
+      const u = await prisma.user.create({
+        data: {
+          mobileNumber: '+919999555001',
+          accountStatus: 'ACTIVE',
+        },
+      });
+      testUserId = u.id;
+
+      const p = await prisma.partnerProfile.create({
+        data: {
+          userId: u.id,
+          legalName: 'Constraint Test Partner Profile',
+          approvalStatus: 'APPROVED',
+        },
+      });
+      testPartnerId = p.id;
+
+      const vt = await prisma.vehicleType.findFirst({ where: { isActive: true } });
+      const v1 = await prisma.vehicle.create({
+        data: {
+          vehicleTypeId: vt!.id,
+          registrationNumber: 'KA04ENG001',
+          verificationStatus: 'VERIFIED',
+        },
+      });
+      const v2 = await prisma.vehicle.create({
+        data: {
+          vehicleTypeId: vt!.id,
+          registrationNumber: 'KA04ENG002',
+          verificationStatus: 'VERIFIED',
+        },
+      });
+      vId1 = v1.id;
+      vId2 = v2.id;
+    });
+
+    afterAll(async () => {
+      await prisma.partnerVehicle.deleteMany({
+        where: { vehicleId: { in: [vId1, vId2] } },
+      });
+      await prisma.vehicle.deleteMany({
+        where: { id: { in: [vId1, vId2] } },
+      });
+      if (testPartnerId) {
+        await prisma.partnerProfile.deleteMany({ where: { id: testPartnerId } });
+      }
+      if (testUserId) {
+        await prisma.user.deleteMany({ where: { id: testUserId } });
+      }
+    });
+
+    it('idx_one_primary_vehicle_per_partner: PostgreSQL engine rejects inserting second active primary vehicle for same partner', async () => {
+      // 1. Insert first active primary vehicle directly
+      await prisma.partnerVehicle.create({
+        data: {
+          partnerId: testPartnerId,
+          vehicleId: vId1,
+          isPrimary: true,
+          ownershipStatus: 'ACTIVE',
+          ownershipType: 'OWNER',
+          unassignedAt: null,
+        },
+      });
+
+      // 2. Attempt to insert second active primary vehicle directly in PostgreSQL bypassing application logic
+      let rejected = false;
+      try {
+        await prisma.partnerVehicle.create({
+          data: {
+            partnerId: testPartnerId,
+            vehicleId: vId2,
+            isPrimary: true,
+            ownershipStatus: 'ACTIVE',
+            ownershipType: 'OWNER',
+            unassignedAt: null,
+          },
+        });
+      } catch (err: any) {
+        rejected = true;
+        expect(err.message).toContain('Unique constraint failed');
+      }
+
+      expect(rejected).toBe(true);
+
+      // Clean up first test record
+      await prisma.partnerVehicle.deleteMany({
+        where: { partnerId: testPartnerId, vehicleId: vId1 },
+      });
+    });
+
+    it('chk_active_ownership_unassigned_at: PostgreSQL engine rejects active record with non-null unassigned_at', async () => {
+      let rejected = false;
+      try {
+        await prisma.partnerVehicle.create({
+          data: {
+            partnerId: testPartnerId,
+            vehicleId: vId1,
+            isPrimary: false,
+            ownershipStatus: 'ACTIVE',
+            ownershipType: 'OWNER',
+            unassignedAt: new Date(), // VIOLATES CHECK CONSTRAINT!
+          },
+        });
+      } catch (err: any) {
+        rejected = true;
+        // Verify PostgreSQL check constraint error (code 23514)
+        expect(err.message).toContain('chk_active_ownership_unassigned_at');
+      }
+
+      expect(rejected).toBe(true);
+    });
+
+    it('chk_active_ownership_unassigned_at: PostgreSQL engine permits non-active record with unassigned_at populated', async () => {
+      const transferredRel = await prisma.partnerVehicle.create({
+        data: {
+          partnerId: testPartnerId,
+          vehicleId: vId1,
+          isPrimary: false,
+          ownershipStatus: 'TRANSFERRED',
+          ownershipType: 'OWNER',
+          unassignedAt: new Date(),
+        },
+      });
+
+      expect(transferredRel).toBeDefined();
+      expect(transferredRel.ownershipStatus).toBe('TRANSFERRED');
+      expect(transferredRel.unassignedAt).not.toBeNull();
+
+      // Clean up
+      await prisma.partnerVehicle.deleteMany({
+        where: { id: transferredRel.id },
+      });
+    });
+  });
+
+  describe('8. Asia/Kolkata Business Calendar Timezone Boundary Verification', () => {
+    const expiryDateStr = '2026-11-05';
+
+    it('Document remains valid until 23:59:59.999 IST on expiry date (Asia/Kolkata)', () => {
+      // 23:59:59.999 IST on 2026-11-05 corresponds to 2026-11-05T18:29:59.999Z UTC
+      const lastMillisecondOfExpiryDay = new Date('2026-11-05T18:29:59.999Z');
+      const evalResult = DateUtil.evaluateCalendarExpiry(expiryDateStr, lastMillisecondOfExpiryDay);
+
+      expect(evalResult.isExpired).toBe(false);
+      expect(evalResult.daysRemaining).toBe(0);
+      expect(evalResult.isExpiringSoon).toBe(true);
+      expect(evalResult.formattedExpiry).toBe(expiryDateStr);
+    });
+
+    it('Document becomes EXPIRED at 00:00:00.000 IST on the subsequent day (zero grace period)', () => {
+      // 00:00:00.000 IST on 2026-11-06 corresponds to 2026-11-05T18:30:00.000Z UTC
+      const firstMillisecondOfNextDay = new Date('2026-11-05T18:30:00.000Z');
+      const evalResult = DateUtil.evaluateCalendarExpiry(expiryDateStr, firstMillisecondOfNextDay);
+
+      expect(evalResult.isExpired).toBe(true);
+      expect(evalResult.daysRemaining).toBe(0);
+      expect(evalResult.isExpiringSoon).toBe(false);
+      expect(evalResult.warning).toBe('DOCUMENT_EXPIRED');
+    });
+
+    it('Start of expiry day at 00:00:00.000 IST is valid with 0 days remaining', () => {
+      // 00:00:00.000 IST on 2026-11-05 corresponds to 2026-11-04T18:30:00.000Z UTC
+      const startOfExpiryDay = new Date('2026-11-04T18:30:00.000Z');
+      const evalResult = DateUtil.evaluateCalendarExpiry(expiryDateStr, startOfExpiryDay);
+
+      expect(evalResult.isExpired).toBe(false);
+      expect(evalResult.daysRemaining).toBe(0);
+      expect(evalResult.isExpiringSoon).toBe(true);
+    });
+
+    it('15-day warning boundary: 15 calendar days remaining triggers DOCUMENT_EXPIRING_SOON', () => {
+      // Reference date: 2026-10-21 12:00:00 IST -> 15 full calendar days before 2026-11-05
+      const fifteenDaysBefore = new Date('2026-10-21T06:30:00.000Z');
+      const evalResult = DateUtil.evaluateCalendarExpiry(expiryDateStr, fifteenDaysBefore);
+
+      expect(evalResult.isExpired).toBe(false);
+      expect(evalResult.daysRemaining).toBe(15);
+      expect(evalResult.isExpiringSoon).toBe(true);
+      expect(evalResult.warning).toBe('DOCUMENT_EXPIRING_SOON');
+    });
+
+    it('16-day boundary: 16 calendar days remaining does not trigger warning', () => {
+      // Reference date: 2026-10-20 12:00:00 IST -> 16 full calendar days before 2026-11-05
+      const sixteenDaysBefore = new Date('2026-10-20T06:30:00.000Z');
+      const evalResult = DateUtil.evaluateCalendarExpiry(expiryDateStr, sixteenDaysBefore);
+
+      expect(evalResult.isExpired).toBe(false);
+      expect(evalResult.daysRemaining).toBe(16);
+      expect(evalResult.isExpiringSoon).toBe(false);
+      expect(evalResult.warning).toBeUndefined();
+    });
+
+    it('Machine local timezone independence: Explicit Asia/Kolkata business calendar comparisons', () => {
+      // Ensure DateUtil.BUSINESS_TIMEZONE is explicitly configured as 'Asia/Kolkata'
+      expect(DateUtil.BUSINESS_TIMEZONE).toBe('Asia/Kolkata');
+
+      const parsed = DateUtil.parseCalendarDate('2026-11-05');
+      expect(parsed.dateStr).toBe('2026-11-05');
+      expect(parsed.year).toBe(2026);
+      expect(parsed.month).toBe(11);
+      expect(parsed.day).toBe(5);
+
+      const startInstant = DateUtil.getStartOfKolkataDay('2026-11-05');
+      expect(startInstant.toISOString()).toBe('2026-11-04T18:30:00.000Z');
+
+      const endInstant = DateUtil.getEndOfKolkataDay('2026-11-05');
+      expect(endInstant.toISOString()).toBe('2026-11-05T18:29:59.999Z');
     });
   });
 });
