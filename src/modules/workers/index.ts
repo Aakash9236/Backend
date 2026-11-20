@@ -1,3 +1,10 @@
 export * from './workers.types';
 export * from './repositories';
 export * from './utils/worker-db-error.util';
+export * from './services/worker-kyc.service';
+export * from './services/worker-onboarding.service';
+export * from './services/worker-invitation.service';
+export * from './services/worker-affiliation.service';
+export * from './services/worker-availability.service';
+
+

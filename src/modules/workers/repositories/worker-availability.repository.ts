@@ -111,7 +111,7 @@ export class WorkerAvailabilityRepository {
   }
 
   /**
-   * Update heartbeat timestamp and optional coordinates
+   * Update heartbeat timestamp and optional coordinates without automatically marking offline worker online
    */
   public async updateHeartbeat(
     workerId: bigint,
@@ -125,7 +125,7 @@ export class WorkerAvailabilityRepository {
         where: { workerId },
         create: {
           workerId,
-          isOnline: true,
+          isOnline: false, // Never silently reactivate an offline worker through heartbeat
           isBusy: false,
           currentLatitude: latitude !== undefined && latitude !== null ? new Prisma.Decimal(latitude.toString()) : null,
           currentLongitude: longitude !== undefined && longitude !== null ? new Prisma.Decimal(longitude.toString()) : null,
@@ -147,6 +147,57 @@ export class WorkerAvailabilityRepository {
       });
     } catch (error) {
       handleWorkerDbError(error, 'Failed to update worker heartbeat');
+    }
+  }
+
+  /**
+   * Atomically acquire a dispatch lock on an online, non-busy worker
+   */
+  public async atomicAcquireLock(
+    workerId: bigint,
+    tx?: Prisma.TransactionClient
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(tx);
+      const result = await client.workerAvailability.updateMany({
+        where: {
+          workerId,
+          isOnline: true,
+          isBusy: false,
+        },
+        data: {
+          isBusy: true,
+          lastHeartbeatAt: new Date(),
+        },
+      });
+      return result.count > 0;
+    } catch (error) {
+      handleWorkerDbError(error, 'Failed to atomically acquire dispatch lock on worker');
+    }
+  }
+
+  /**
+   * Atomically release a dispatch lock on a worker
+   */
+  public async atomicReleaseLock(
+    workerId: bigint,
+    tx?: Prisma.TransactionClient
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(tx);
+      const result = await client.workerAvailability.updateMany({
+        where: {
+          workerId,
+          isBusy: true,
+        },
+        data: {
+          isBusy: false,
+          lastHeartbeatAt: new Date(),
+        },
+      });
+      return result.count > 0;
+    } catch (error) {
+      handleWorkerDbError(error, 'Failed to atomically release dispatch lock on worker');
     }
   }
 

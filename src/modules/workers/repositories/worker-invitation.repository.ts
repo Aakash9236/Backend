@@ -273,11 +273,12 @@ export class WorkerInvitationRepository {
   }
 
   /**
-   * Increment resend counter
+   * Increment resend counter and rotate token/expiry
    */
   public async incrementResendCount(
     id: bigint,
     newExpiresAt?: Date,
+    newTokenHash?: string,
     tx?: Prisma.TransactionClient
   ): Promise<WorkerInvitation> {
     try {
@@ -287,6 +288,7 @@ export class WorkerInvitationRepository {
         data: {
           resendCount: { increment: 1 },
           ...(newExpiresAt ? { expiresAt: newExpiresAt } : {}),
+          ...(newTokenHash ? { invitationTokenHash: newTokenHash } : {}),
         },
       });
     } catch (error) {
