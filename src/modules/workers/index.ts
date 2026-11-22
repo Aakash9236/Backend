@@ -6,3 +6,4 @@ export * from './services/worker-onboarding.service';
 export * from './services/worker-invitation.service';
 export * from './services/worker-affiliation.service';
 export * from './services/worker-availability.service';
+export * from './services/worker-admin-governance.service';
