@@ -153,9 +153,11 @@ export const requireAnyRole = requireRole;
 export const requireCustomer = requireRole(UserRole.CUSTOMER);
 export const requirePartner = requireRole(UserRole.PARTNER);
 export const requireDriver = requireRole(UserRole.DRIVER);
+export const requireWorker = requireRole(UserRole.WORKER);
 export const requireAdmin = requireRole(UserRole.ADMIN, UserRole.SUPER_ADMIN);
 export const requireSuperAdmin = requireRole(UserRole.SUPER_ADMIN);
 
 export const requireActiveCustomer = requireActiveRole(UserRole.CUSTOMER);
 export const requireActivePartner = requireActiveRole(UserRole.PARTNER);
 export const requireActiveDriver = requireActiveRole(UserRole.DRIVER);
+export const requireActiveWorker = requireActiveRole(UserRole.WORKER);

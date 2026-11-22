@@ -7,3 +7,8 @@ export * from './services/worker-invitation.service';
 export * from './services/worker-affiliation.service';
 export * from './services/worker-availability.service';
 export * from './services/worker-admin-governance.service';
+export * from './workers.validator';
+export * from './workers.middleware';
+export * from './workers.controller';
+export * from './workers.routes';
+
