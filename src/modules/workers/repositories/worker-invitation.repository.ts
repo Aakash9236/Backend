@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Prisma, WorkerInvitation } from '@prisma/client';
 import { prisma } from '../../../config/db.config';
 import {
@@ -108,6 +109,17 @@ export class WorkerInvitationRepository {
     } catch (error) {
       handleWorkerDbError(error, 'Failed to find worker invitation by token hash');
     }
+  }
+
+  /**
+   * Find invitation by raw unhashed token (hashes to SHA-256 before querying)
+   */
+  public async findByToken(
+    rawToken: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<WorkerInvitation | null> {
+    const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+    return this.findByTokenHash(tokenHash, tx);
   }
 
   /**

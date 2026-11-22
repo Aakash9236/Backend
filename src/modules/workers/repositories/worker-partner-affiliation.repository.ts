@@ -235,6 +235,65 @@ export class WorkerPartnerAffiliationRepository {
   }
 
   /**
+   * List workers affiliated with a partner (with optional status filter)
+   */
+  public async listByPartner(
+    partnerId: bigint,
+    status?: string,
+    options?: PaginationOptions,
+    tx?: Prisma.TransactionClient
+  ): Promise<PaginatedResult<WorkerPartnerAffiliation>> {
+    try {
+      const client = this.getClient(tx);
+      const page = Math.max(1, options?.page || 1);
+      const limit = Math.max(1, Math.min(100, options?.limit || 20));
+      const skip = (page - 1) * limit;
+
+      const where: Prisma.WorkerPartnerAffiliationWhereInput = {
+        partnerId,
+        ...(status ? { affiliationStatus: status } : {}),
+      };
+
+      const orderBy: Prisma.WorkerPartnerAffiliationOrderByWithRelationInput = options?.sortBy
+        ? { [options.sortBy]: options.sortOrder || 'desc' }
+        : { affiliatedAt: 'desc' };
+
+      const [items, total] = await Promise.all([
+        client.workerPartnerAffiliation.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy,
+          include: {
+            worker: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    mobileNumber: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        client.workerPartnerAffiliation.count({ where }),
+      ]);
+
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      };
+    } catch (error) {
+      handleWorkerDbError(error, 'Failed to list partner worker affiliations');
+    }
+  }
+
+  /**
    * Terminate an affiliation (preserves historical record)
    */
   public async terminate(

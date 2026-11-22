@@ -558,7 +558,7 @@ describe('Phase 6C: Vehicle Ownership & Fleet Management Verification', () => {
     });
 
     it('Calendar-day Expiry Validation: Document expiring today is valid through 23:59:59 (isExpired: false)', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = DateUtil.parseCalendarDate(new Date()).dateStr;
 
       const res = await request(app)
         .post(`/api/v1/partners/vehicles/${targetVehicleId}/documents`)

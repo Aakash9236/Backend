@@ -92,7 +92,7 @@ export class WorkerDocumentRepository {
       const client = this.getClient(tx);
       return await client.workerDocument.findMany({
         where: { workerId },
-        orderBy: { uploadedAt: 'desc' },
+        orderBy: [{ uploadedAt: 'desc' }, { id: 'desc' }],
         include: {
           reviewer: {
             select: {
@@ -144,7 +144,7 @@ export class WorkerDocumentRepository {
           workerId,
           documentType,
         },
-        orderBy: { uploadedAt: 'desc' },
+        orderBy: [{ uploadedAt: 'desc' }, { id: 'desc' }],
         include: {
           reviewer: {
             select: {
